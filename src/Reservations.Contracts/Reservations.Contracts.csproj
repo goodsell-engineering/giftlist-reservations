@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- CONVENTIONS.md "Project reference graph": Contracts references nothing — never Domain,
+       never BuildingBlocks. This is Reservation's entire public wire surface: the commands it
+       accepts and the events it publishes (ARCHITECTURE.md "Contracts: each service owns and
+       publishes its own").
+
+       IT IS EMPTY TODAY, AND THAT IS THE ACCURATE STATEMENT OF THIS SERVICE'S SURFACE. The
+       Reservation service is a Phase 0 skeleton: Reservations.Host wires Mongo, Rebus and health
+       checks and nothing else, so there is no use case, no aggregate, and therefore no command
+       anyone may send it and no event anyone may subscribe to. GL-25 creates the project rather
+       than leaving Phase 4 to invent both the types and the packaging plumbing at once, and
+       leaves it empty rather than guessing at shapes: ARCHITECTURE.md "What 'breaking' means for
+       a message contract" makes a renamed type or a changed field a MAJOR version, so a guessed
+       contract is the expensive kind of wrong, while adding the first real type here later is a
+       purely additive minor.
+
+       What Phase 4 puts here, from ARCHITECTURE.md "Event catalogue" and the Phase 4 plan:
+       ReserveGift (request/reply) and ReleaseReservation as commands, GiftReservedV1 and
+       ReservationReleasedV1 as events. Whoever writes them: ARCHITECTURE.md "Reservation
+       privacy" is a product guarantee enforced by the ABSENCE of fields — no name, no email, no
+       session id, no IP, nothing that could correlate two reservations to one person. A field
+       added here cannot be removed again without a major bump, so the guarantee is cheapest to
+       keep by never adding one. -->
+
+  <!-- GL-25: this project is the package. Packed to the local folder feed and consumed by every
+       other repo that sends Reservation a command or subscribes to its events. PackageId is the
+       assembly name character for character, deliberately: ARCHITECTURE.md "What 'breaking'
+       means for a message contract" makes the type name and namespace part of the wire format,
+       because Rebus routes and deserializes on the .NET type name.
+
+       Version 0.1.0 is the split's starting point; GL-27 owns the bump discipline from here. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Reservations.Contracts</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>goodsell-engineering</Authors>
+    <Description>Reservation's entire public wire surface: the commands it accepts and the events it publishes. Empty until Phase 4 — the service has no use cases yet.</Description>
+  </PropertyGroup>
+
+</Project>
