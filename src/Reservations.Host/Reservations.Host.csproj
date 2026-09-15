@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <UserSecretsId>dotnet-Reservations.Host-c7ae27b8-29fa-45e0-9281-d2385fd03787</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- GL-52: an ops-only Kestrel listener (/healthz) on an otherwise non-HTTP worker host, per
+       ARCHITECTURE.md "Why workers still need a little HTTP". Not a business API. The Microsoft.Extensions.Hosting
+       PackageReference that used to sit here is gone on purpose: this FrameworkReference brings
+       it in transitively (NU1510 fails the build on the redundant explicit reference), and
+       WebApplication.CreateBuilder in Program.cs already builds on the generic host. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Reservations.Infrastructure\Reservations.Infrastructure.csproj" />
+    <!-- GL-52: composition root wires the shared Mongo/Rebus/health-check helpers directly.
+         CONVENTIONS.md "Project reference graph" permits BuildingBlocks.Infrastructure to be referenced by Host as
+         well as Infrastructure. -->
+    <PackageReference Include="BuildingBlocks.Infrastructure" Version="0.1.0" />
+  </ItemGroup>
+</Project>
