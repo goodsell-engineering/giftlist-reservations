@@ -6,16 +6,14 @@ on:
     branches: [main]
 
 # GL-30: build + unit test only. Same shape and reasoning as giftlist-identity's workflow (read
-# its comments for the full account). This repo is smaller than its siblings: only
-# Reservations.Host references a GiftList package (BuildingBlocks.Infrastructure, which pulls in
-# BuildingBlocks transitively via its own nuspec), and Reservations.IntegrationTests does not
-# reference BuildingBlocks.Testing the way Identity's/GiftLists' do — verified by reading the
-# .csproj, not assumed, since the Phase 0 skeleton state of this service (Reservations.Contracts
-# is deliberately empty; see its own .csproj) makes "this repo needs less than its siblings"
-# plausible in a way it might not be for a repo with real use cases. Only BuildingBlocks and
-# BuildingBlocks.Infrastructure are packed here as a result — adding BuildingBlocks.Testing back
-# is a one-line addition to the pack step below if/when this suite starts sharing that
-# QueueCleanup helper like its siblings.
+# its comments for the full account) — this repo restores BuildingBlocks,
+# BuildingBlocks.Infrastructure and BuildingBlocks.Testing from ../local-feed (nuget.config,
+# GL-26), which does not exist on a fresh runner, so this job builds giftlist-buildingblocks from
+# source into a job-local feed. BuildingBlocks.Testing joined the list with GL-35, when
+# Reservations.IntegrationTests gained its first Testcontainers fixture; until then this repo
+# packed only the two its Host needed, and the first PR to add the reference went red in CI
+# because nothing here packed the package it asked for. Keep this list in step with the
+# PackageReferences across the whole solution, not just src/.
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -35,7 +33,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Pack BuildingBlocks/.Infrastructure into a job-local feed
+      - name: Pack BuildingBlocks/.Infrastructure/.Testing into a job-local feed
         run: |
           set -euo pipefail
           FEED="$GITHUB_WORKSPACE/local-feed"
@@ -43,7 +41,8 @@ jobs:
           : > "$GITHUB_WORKSPACE/expected-versions.env"
           for proj in \
             giftlist-buildingblocks/src/BuildingBlocks/BuildingBlocks.csproj \
-            giftlist-buildingblocks/src/BuildingBlocks.Infrastructure/BuildingBlocks.Infrastructure.csproj; do
+            giftlist-buildingblocks/src/BuildingBlocks.Infrastructure/BuildingBlocks.Infrastructure.csproj \
+            giftlist-buildingblocks/src/BuildingBlocks.Testing/BuildingBlocks.Testing.csproj; do
             id=$(dotnet msbuild "$proj" -getProperty:PackageId -nologo)
             ver=$(dotnet msbuild "$proj" -getProperty:Version -nologo)
             dotnet pack "$proj" -c Release -o "$FEED" --nologo
