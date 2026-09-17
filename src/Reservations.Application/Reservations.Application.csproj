@@ -19,6 +19,20 @@
          itself a reason. Mirrors GiftLists.Application's and Identity.Application's own identical
          grant. Do not cite this comment to add a production grant of any other shape. -->
     <InternalsVisibleTo Include="Reservations.Infrastructure" />
+    <!-- GL-36: a grant to a test project, so it IS governed by CONVENTIONS.md "Reaching an
+         internal from a test"'s ordering (GL-69, which removed the sibling grants in
+         Identity.Application and Gateway.Application because they granted nothing; a grant of
+         this shape is earned per service, never copied across).
+
+         Route 1, extract a public framework-free type, does not apply: an interactor or
+         validator is a use case orchestrating ports, not an algorithm that could be lifted out of
+         one. Route 2, resolve through the composition root, cannot serve these tests: resolving
+         IInteractor<,> from AddReservationsInfrastructure yields the interactor bound to the
+         PRODUCTION adapters (a real IMongoDatabase, a real IBus) and wrapped in the
+         Validating/Logging decorators — ReserveGiftInteractorTests constructs the interactor
+         against hand-written fakes precisely to avoid all of that (CONVENTIONS.md "Testing").
+         Mirrors GiftLists.Application's identical grant to GiftLists.UnitTests exactly. -->
+    <InternalsVisibleTo Include="Reservations.UnitTests" />
   </ItemGroup>
 </Project>
 

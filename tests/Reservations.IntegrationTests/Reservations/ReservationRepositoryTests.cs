@@ -1,6 +1,7 @@
 using Reservations.Application.Reservations;
 using Reservations.Domain.Reservations;
 using Reservations.IntegrationTests.Fixtures;
+using Reservations.IntegrationTests.Support;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Reservations.IntegrationTests.Reservations;
@@ -9,10 +10,11 @@ namespace Reservations.IntegrationTests.Reservations;
 /// GL-35: proves the persistence shape and, specifically, that the unique compound index on
 /// (listId, itemId) actually rejects a duplicate insert against a real MongoDB — not an
 /// in-memory stand-in, which cannot enforce a unique index at all (CONVENTIONS.md "Testing").
-/// This is "first reserver wins" itself, not a proxy for it: GL-36's ReserveGift handler will
-/// decide what a client sees when <see cref="IReservationRepository.AddAsync"/> returns
-/// <see cref="ReservationErrors.AlreadyReserved"/>, but which of two racing inserts gets that
-/// answer is decided entirely here, by Mongo, before any handler exists.
+/// This is "first reserver wins" itself, not a proxy for it: GL-36's <c>ReserveGiftHandler</c>
+/// decides what a client sees when <see cref="IReservationRepository.AddAsync"/> returns
+/// <see cref="ReservationErrors.AlreadyReserved"/> (see <c>ReserveGiftTests</c> for that,
+/// end-to-end, through the real request/reply bridge), but which of two racing inserts gets that
+/// answer is decided entirely here, by Mongo.
 /// </summary>
 [Collection(ReservationsCollection.Name)]
 public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IAsyncLifetime
@@ -31,8 +33,8 @@ public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IA
         var now = DateTimeOffset.UtcNow;
         var listId = new GiftListId(Guid.NewGuid());
         var itemId = new GiftItemId(Guid.NewGuid());
-        var first = Reservation.Create(ReservationId.New(), listId, itemId, now);
-        var second = Reservation.Create(ReservationId.New(), listId, itemId, now.AddSeconds(1));
+        var first = Reservation.Create(ReservationId.New(), listId, itemId, new ReleaseSecret(ReleaseSecrets.New()), now);
+        var second = Reservation.Create(ReservationId.New(), listId, itemId, new ReleaseSecret(ReleaseSecrets.New()), now.AddSeconds(1));
 
         using var scope = fixture.CreateReservationsScope();
         var repository = scope.ServiceProvider.GetRequiredService<IReservationRepository>();
@@ -58,8 +60,8 @@ public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IA
         // the index was declared on the PAIR, not accidentally on ItemId alone.
         var now = DateTimeOffset.UtcNow;
         var itemId = new GiftItemId(Guid.NewGuid());
-        var first = Reservation.Create(ReservationId.New(), new GiftListId(Guid.NewGuid()), itemId, now);
-        var second = Reservation.Create(ReservationId.New(), new GiftListId(Guid.NewGuid()), itemId, now);
+        var first = Reservation.Create(ReservationId.New(), new GiftListId(Guid.NewGuid()), itemId, new ReleaseSecret(ReleaseSecrets.New()), now);
+        var second = Reservation.Create(ReservationId.New(), new GiftListId(Guid.NewGuid()), itemId, new ReleaseSecret(ReleaseSecrets.New()), now);
 
         using var scope = fixture.CreateReservationsScope();
         var repository = scope.ServiceProvider.GetRequiredService<IReservationRepository>();
@@ -80,7 +82,8 @@ public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IA
         var now = DateTimeOffset.UtcNow;
         var listId = new GiftListId(Guid.NewGuid());
         var itemId = new GiftItemId(Guid.NewGuid());
-        var reservation = Reservation.Create(ReservationId.New(), listId, itemId, now);
+        var releaseSecret = new ReleaseSecret(ReleaseSecrets.New());
+        var reservation = Reservation.Create(ReservationId.New(), listId, itemId, releaseSecret, now);
 
         using var scope = fixture.CreateReservationsScope();
         var repository = scope.ServiceProvider.GetRequiredService<IReservationRepository>();
@@ -96,6 +99,7 @@ public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IA
         Assert.Equal(listId, reloaded.ListId);
         Assert.Equal(itemId, reloaded.ItemId);
         Assert.Equal(reservation.ReservedAt, reloaded.ReservedAt);
+        Assert.Equal(releaseSecret, reloaded.ReleaseSecret);
     }
 
     [Fact]

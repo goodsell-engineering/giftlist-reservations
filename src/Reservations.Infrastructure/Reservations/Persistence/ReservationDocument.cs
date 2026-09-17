@@ -17,9 +17,10 @@ namespace Reservations.Infrastructure.Reservations.Persistence;
 /// lost by storing it as one.
 ///
 /// Carries no reserver identity of any kind (ARCHITECTURE.md "Reservation privacy") — the fields
-/// below are the whole document today. <c>releaseSecret</c> (ARCHITECTURE.md "Data model") is
-/// the one field still to come; it arrives with GL-36's <c>ReserveGift</c>, the use case that
-/// mints it, and is returned only to the reserving browser — never queried, projected or published.
+/// below are the whole document. <see cref="ReleaseSecret"/> (ARCHITECTURE.md "Data model") is
+/// the one opaque, unguessable capability stored here, minted once by <c>ReserveGift</c> (GL-36)
+/// and returned to a client only once, in its reply — never queried, projected or published from
+/// here again.
 /// </summary>
 public sealed class ReservationDocument
 {
@@ -35,4 +36,12 @@ public sealed class ReservationDocument
     public required Guid ItemId { get; init; }
 
     public required DateTime ReservedAt { get; init; }
+
+    /// <summary>
+    /// The <c>Reservations.Domain.Reservations.ReleaseSecret</c>'s raw string (GL-36). Never
+    /// exposed by any query response, projection, or event (ARCHITECTURE.md "Reservation privacy");
+    /// it is returned to a caller exactly once, in the <c>ReserveGift</c> reply, at the
+    /// moment it is minted.
+    /// </summary>
+    public required string ReleaseSecret { get; init; }
 }

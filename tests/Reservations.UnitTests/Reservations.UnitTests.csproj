@@ -18,5 +18,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Reservations.Domain\Reservations.Domain.csproj" />
     <ProjectReference Include="..\..\src\Reservations.Application\Reservations.Application.csproj" />
+    <!-- GL-36: GiftReservedV1Tests is a pure reflection-over-the-type shape guard (mirrors
+         Identity.UnitTests' UserRegisteredV1Tests) — it needs no broker and no Infrastructure
+         wiring, only the Contracts type itself. Contracts references nothing (CONVENTIONS.md
+         "Project reference graph"), so a direct ProjectReference here is a leaf dependency, not a
+         ring violation; DependencyRuleTests' Application_ClosureShouldExcludeContractsPackages
+         is scoped to Application's own closure, not to this test project's. -->
+    <ProjectReference Include="..\..\src\Reservations.Contracts\Reservations.Contracts.csproj" />
   </ItemGroup>
 </Project>
