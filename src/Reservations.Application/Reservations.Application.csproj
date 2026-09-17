@@ -7,5 +7,18 @@
          value, never an exception (CONVENTIONS.md "Errors"). -->
     <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- GL-34: interactors are internal sealed and registered against the open generic
+         IInteractor<,> (CONVENTIONS.md "Use cases" [AT]); the validators beside them are internal
+         sealed too. Either way the composition root has to name the concrete types to register
+         them, so AddReservationsInfrastructure would not compile without this. Production wiring
+         required by "Use cases", not a testing decision: CONVENTIONS.md "Reaching an internal
+         from a test" carves out exactly this grant — Application to its own Infrastructure, for
+         the composition root — and says in terms that targeting a production assembly is not
+         itself a reason. Mirrors GiftLists.Application's and Identity.Application's own identical
+         grant. Do not cite this comment to add a production grant of any other shape. -->
+    <InternalsVisibleTo Include="Reservations.Infrastructure" />
+  </ItemGroup>
 </Project>
 

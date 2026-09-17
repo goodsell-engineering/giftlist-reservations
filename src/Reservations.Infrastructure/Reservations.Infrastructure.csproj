@@ -3,6 +3,17 @@
   <ItemGroup>
     <PackageReference Include="MongoDB.Driver" Version="3.11.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <!-- GL-34: the gift-list projection's Rebus handlers/subscriptions, and the four
+         RecordGiftList*/RecordGiftItem* interactors' Validating<,>/Logging<,> decorator pipeline.
+         Same package/version choices as GiftLists.Infrastructure and Gateway.Infrastructure, for
+         consistency across services. -->
+    <PackageReference Include="Rebus" Version="8.9.3" />
+    <PackageReference Include="Rebus.ServiceProvider" Version="10.7.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <!-- Open-generic decoration (CONVENTIONS.md "Use cases" — one Validating<,>/Logging<,> pair for
+         every use case) needs Scrutor's Decorate(Type, Type) overload; Microsoft.Extensions.DI
+         alone has no equivalent. -->
+    <PackageReference Include="Scrutor" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -10,8 +21,16 @@
     <ProjectReference Include="..\Reservations.Domain\Reservations.Domain.csproj" />
     <!-- CONVENTIONS.md "Project reference graph": Infrastructure may reference BuildingBlocks
          directly too — needed here for BuildingBlocks.Results.Result<T>, which the repository
-         pattern-matches on when translating a Mongo write outcome. -->
+         pattern-matches on when translating a Mongo write outcome, and for
+         BuildingBlocks.Persistence.BoundedCasRetry/BoundedCasRetryPolicy, which
+         GiftListProjectionRepository's compare-and-set retry loop reuses (GL-79 moved both into
+         BuildingBlocks.Persistence specifically so this projection could reuse them). -->
     <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
+    <!-- GL-34: this projection is built from GiftLists' own integration events — CONVENTIONS.md
+         "Project reference graph" permits Infrastructure to reference another service's
+         *.Contracts (ARCHITECTURE.md "Consuming other services' events: anti-corruption layer" —
+         these types stop at this boundary; Application/Domain never see them). -->
+    <PackageReference Include="GiftLists.Contracts" Version="[0.1.0]" />
   </ItemGroup>
 </Project>
 
