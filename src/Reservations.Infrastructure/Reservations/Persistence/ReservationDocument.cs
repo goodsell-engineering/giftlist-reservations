@@ -9,8 +9,17 @@ namespace Reservations.Infrastructure.Reservations.Persistence;
 /// field names are camelCased by the shared <c>BuildingBlocks.Persistence.MongoConventions</c>
 /// pack registered once at startup.
 ///
+/// <see cref="ReservedAt"/> is <see cref="DateTime"/>, not the aggregate's own
+/// <see cref="DateTimeOffset"/> — see
+/// <c>Identity.Infrastructure.Users.Persistence.UserDocument.CreatedAt</c>'s own doc comment for
+/// why (the driver's default <see cref="DateTimeOffset"/> representation doesn't range-query
+/// like a native BSON date). It is always UTC (sourced from <c>IClock.UtcNow</c>), so nothing is
+/// lost by storing it as one.
+///
 /// Carries no reserver identity of any kind (ARCHITECTURE.md "Reservation privacy") — the fields
-/// below are the whole document.
+/// below are the whole document today. <c>releaseSecret</c> (ARCHITECTURE.md "Data model") is
+/// the one field still to come; it arrives with GL-36's <c>ReserveGift</c>, the use case that
+/// mints it, and is returned only to the reserving browser — never queried, projected or published.
 /// </summary>
 public sealed class ReservationDocument
 {
