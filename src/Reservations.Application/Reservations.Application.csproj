@@ -2,5 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Reservations.Domain\Reservations.Domain.csproj" />
+    <!-- CONVENTIONS.md "Project reference graph": Application -> Domain, BuildingBlocks only.
+         Needed for BuildingBlocks.Results.Result<T>/Error — an expected use-case outcome is a
+         value, never an exception (CONVENTIONS.md "Errors"). -->
+    <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
   </ItemGroup>
 </Project>
+
