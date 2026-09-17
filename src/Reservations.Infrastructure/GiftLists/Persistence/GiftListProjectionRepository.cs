@@ -4,6 +4,7 @@ using Reservations.Application.GiftLists.RecordGiftItemAdded;
 using Reservations.Application.GiftLists.RecordGiftItemRemoved;
 using Reservations.Application.GiftLists.RecordGiftListCreated;
 using Reservations.Application.GiftLists.RecordGiftListDeleted;
+using Reservations.Domain.Reservations;
 using MongoDB.Driver;
 
 namespace Reservations.Infrastructure.GiftLists.Persistence;
@@ -54,10 +55,11 @@ internal sealed class GiftListProjectionRepository : IGiftListProjectionReposito
         _giftListProjections = database.GetCollection<GiftListProjectionDocument>(CollectionName);
     }
 
-    public async Task<GiftListProjection?> FindByIdAsync(Guid listId, CancellationToken cancellationToken)
+    public async Task<GiftListProjection?> FindByIdAsync(GiftListId listId, CancellationToken cancellationToken)
     {
+        var id = listId.Value;
         var document = await _giftListProjections
-            .Find(d => d.Id == listId && d.HasCreated)
+            .Find(d => d.Id == id && d.HasCreated)
             .FirstOrDefaultAsync(cancellationToken);
 
         return document is null ? null : GiftListProjectionDocumentMapper.ToProjection(document);

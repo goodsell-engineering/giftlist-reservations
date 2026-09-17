@@ -1,3 +1,5 @@
+using Reservations.Domain.Reservations;
+
 namespace Reservations.Application.GiftLists;
 
 /// <summary>
@@ -22,9 +24,19 @@ namespace Reservations.Application.GiftLists;
 /// projection rather than waiting for GiftListExpired to arrive") is that the caller compares this
 /// against its own clock at the moment it matters, instead of trusting a delayed or (today,
 /// unpublished) <c>GiftListExpired</c> event to have already landed.
+///
+/// <see cref="ListId"/> and <see cref="ItemIds"/> are the same strongly-typed
+/// <see cref="GiftListId"/>/<see cref="GiftItemId"/> the <c>Reservation</c> aggregate itself uses
+/// (CONVENTIONS.md "Domain modelling"), not a bare <see cref="Guid"/> — GL-36's <c>ReserveGift</c>
+/// will hold a list id and an item id side by side when it calls this port, and typed ids are what
+/// make that call impossible to compile with the two swapped. This is unlike
+/// <c>Gateway.Application.GiftLists.GiftListProjection</c>, which has no <c>Domain</c> project to
+/// borrow a typed id from at all (ARCHITECTURE.md "Mapping to Clean Architecture's rings" — the
+/// Gateway has none); copying its bare-<see cref="Guid"/> shape here would have been the wrong
+/// precedent to follow.
 /// </remarks>
 public sealed record GiftListProjection(
-    Guid ListId,
+    GiftListId ListId,
     DateTimeOffset ExpiresAt,
     bool IsDeleted,
-    IReadOnlyList<Guid> ItemIds);
+    IReadOnlyList<GiftItemId> ItemIds);

@@ -2,6 +2,7 @@ using Reservations.Application.GiftLists.RecordGiftItemAdded;
 using Reservations.Application.GiftLists.RecordGiftItemRemoved;
 using Reservations.Application.GiftLists.RecordGiftListCreated;
 using Reservations.Application.GiftLists.RecordGiftListDeleted;
+using Reservations.Domain.Reservations;
 
 namespace Reservations.Application.GiftLists;
 
@@ -27,8 +28,17 @@ public interface IGiftListProjectionRepository
     /// <see langword="null"/> both when no <c>GiftListCreatedV1</c> has been seen for this list yet
     /// and when the projection genuinely has no row — the caller cannot and need not tell those
     /// apart (CONVENTIONS.md "Messaging": redelivery/reordering is normal, not an error).
+    ///
+    /// Unlike <c>Gateway.Application.GiftLists.IGiftListProjectionRepository.FindByIdAsync</c>,
+    /// which filters out a deleted list entirely (owner/guest queries have no use for a row that
+    /// is gone), a deleted list here is still returned — with <see cref="GiftListProjection.IsDeleted"/>
+    /// <see langword="true"/> — because GL-36's <c>ReserveGift</c> needs to tell "no such list
+    /// exists" (<see langword="null"/>) apart from "this list existed but is no longer
+    /// reservable" (a non-null projection with <c>IsDeleted == true</c>), the same way it will
+    /// need to compare <see cref="GiftListProjection.ExpiresAt"/> against its own clock rather
+    /// than have this port pre-decide "expired" on its behalf.
     /// </summary>
-    Task<GiftListProjection?> FindByIdAsync(Guid listId, CancellationToken cancellationToken);
+    Task<GiftListProjection?> FindByIdAsync(GiftListId listId, CancellationToken cancellationToken);
 
     /// <exception cref="GiftListProjectionApplyExhaustedException">
     /// The compare-and-set retry loop exhausted its attempt cap — a sustained, pathological burst
