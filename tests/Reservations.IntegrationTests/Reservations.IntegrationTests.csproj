@@ -9,12 +9,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <!-- CONVENTIONS.md "Testing": all infrastructure real via Testcontainers — never an in-memory
-         substitute. GL-35's scope has no Rebus handler yet (GL-36), so this suite starts only
-         Mongo, not RabbitMQ too — there is no messaging code here for a broker to exercise, and
-         this machine has exactly one Testcontainers slot. Add Testcontainers.RabbitMq back here
-         when GL-36 adds the ReserveGift handler. -->
+    <!-- CONVENTIONS.md "Testing": all infrastructure real via Testcontainers, Mongo and RabbitMQ
+         both — never an in-memory substitute for either. GL-36 adds the first real messaging
+         code this suite exercises: the ReserveGift request/reply handler (reached through the
+         real bridge) and the GiftLists projection's four Rebus handlers (GL-34), so RabbitMQ
+         joins Mongo here. Only one Testcontainers slot exists on the build machine — run this
+         suite sequentially with every other repo's IntegrationTests, never concurrently. -->
     <PackageReference Include="Testcontainers.MongoDb" Version="4.14.0" />
+    <PackageReference Include="Testcontainers.RabbitMq" Version="4.14.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
   </ItemGroup>
 

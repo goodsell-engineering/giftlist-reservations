@@ -1,35 +1,54 @@
+using BuildingBlocks.Messaging;
+using BuildingBlocks.Messaging.RequestReply;
 using BuildingBlocks.Persistence;
+using Reservations.Contracts.Reservations;
 using Reservations.Infrastructure.Platform;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
+using Rebus.Bus;
+using Rebus.Config;
+using Rebus.Routing.TypeBased;
 
 namespace Reservations.IntegrationTests.Fixtures;
 
 /// <summary>
 /// Builds the real Reservations composition root — the exact same
-/// <c>AddBuildingBlocksMongo</c>/<c>AddReservationsInfrastructure</c> calls
-/// <c>Reservations.Host</c>'s <c>Program.cs</c> makes — against the container from
-/// <see cref="InfrastructureFixture"/>. GL-35 has no interactor and no Rebus handler yet, so there
-/// is no wire-level entry point to send a command through at all; every test in this suite
-/// resolves <see cref="Application.Reservations.IReservationRepository"/> straight out of the
-/// container instead, via <see cref="CreateReservationsScope"/> — the same route
-/// <c>GiftLists.IntegrationTests.GiftLists.GiftListRepositoryTests</c> uses for exactly the cases
-/// its own fixture's doc comment says the wire-level tests genuinely cannot reach: forcing a
-/// specific duplicate-key collision deterministically. Here that is not the exception, it is the
-/// only thing this suite proves — GL-36's ReserveGift handler is what gives this a wire-level
-/// entry point later.
+/// <c>AddBuildingBlocksMongo</c>/<c>AddBuildingBlocksRebus</c>/<c>AddReservationsInfrastructure</c>
+/// calls <c>Reservations.Host</c>'s <c>Program.cs</c> makes — against the containers from
+/// <see cref="InfrastructureFixture"/>, plus one "requester" bus standing in for both other
+/// services this one ever talks to in production: the Gateway (the only sender of
+/// <see cref="ReserveGift"/>, reached through <see cref="RequestReplyBridge"/>) and GiftLists (the
+/// only publisher of the events <see cref="GiftListsBus"/> lets a test publish). Tests therefore
+/// enter through the real Rebus handlers (CONVENTIONS.md "Testing"'s "entered at its real entry
+/// point"), never by calling an interactor directly — except
+/// <c>ReservationRepositoryTests</c>, which <see cref="CreateReservationsScope"/> exists for; see
+/// its own doc comment for why that one case genuinely cannot be reached deterministically through
+/// the bridge (forcing a specific duplicate-key collision).
 /// </summary>
 public sealed class ReservationsFixture : IAsyncLifetime
 {
     private const string DatabaseName = "reservation";
+    private const string ReservationQueueName = "reservation";
 
     private readonly InfrastructureFixture _infrastructure = new();
     private IHost _reservationsHost = null!;
+    private IHost _requesterHost = null!;
 
     public IMongoDatabase Database { get; private set; } = null!;
+
+    public IRequestReplyBridge RequestReplyBridge => _requesterHost.Services.GetRequiredService<IRequestReplyBridge>();
+
+    /// <summary>
+    /// The GiftLists integration events this fixture can publish onto the real broker — the ACL
+    /// boundary (ARCHITECTURE.md "Consuming other services' events: anti-corruption layer") this
+    /// repo's own four handlers (GL-34) translate on the way in.
+    /// </summary>
+    public IBus GiftListsBus => _requesterHost.Services.GetRequiredService<IBus>();
+
+    public string RabbitMqConnectionString => _infrastructure.RabbitMqConnectionString;
 
     public IServiceScope CreateReservationsScope() => _reservationsHost.Services.CreateScope();
 
@@ -40,22 +59,42 @@ public sealed class ReservationsFixture : IAsyncLifetime
         var reservationsConfig = new Dictionary<string, string?>
         {
             [MongoConfigurationExtensions.ConnectionStringConfigKey] = _infrastructure.MongoConnectionString,
+            [RebusConfigurationExtensions.ConnectionStringConfigKey] = _infrastructure.RabbitMqConnectionString,
         };
         var reservationsBuilder = Host.CreateApplicationBuilder();
         reservationsBuilder.Logging.ClearProviders();
         reservationsBuilder.Configuration.AddInMemoryCollection(reservationsConfig);
         reservationsBuilder.Services.AddBuildingBlocksMongo(reservationsBuilder.Configuration, DatabaseName);
+        reservationsBuilder.Services.AddBuildingBlocksRebus(reservationsBuilder.Configuration, ReservationQueueName);
         reservationsBuilder.Services.AddReservationsInfrastructure();
         _reservationsHost = reservationsBuilder.Build();
         await _reservationsHost.StartAsync();
         await ReservationsInfrastructureServiceCollectionExtensions.EnsureIndexesAsync(
             _reservationsHost.Services, CancellationToken.None);
+        await ReservationsInfrastructureServiceCollectionExtensions.SubscribeToGiftListsEventsAsync(
+            _reservationsHost.Services, CancellationToken.None);
 
         Database = _reservationsHost.Services.GetRequiredService<IMongoDatabase>();
+
+        var requesterBuilder = Host.CreateApplicationBuilder();
+        requesterBuilder.Logging.ClearProviders();
+        requesterBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [RebusConfigurationExtensions.ConnectionStringConfigKey] = _infrastructure.RabbitMqConnectionString,
+        });
+        requesterBuilder.Services.AddBuildingBlocksRebus(
+            requesterBuilder.Configuration,
+            $"reservation-tests.{Guid.NewGuid():N}",
+            configure: (configurer, _) => configurer.Routing(r => r.TypeBased()
+                .Map<ReserveGift>(ReservationQueueName)));
+        _requesterHost = requesterBuilder.Build();
+        await _requesterHost.StartAsync();
     }
 
     public async Task DisposeAsync()
     {
+        await _requesterHost.StopAsync();
+        _requesterHost.Dispose();
         await _reservationsHost.StopAsync();
         _reservationsHost.Dispose();
         await _infrastructure.DisposeAsync();
@@ -65,7 +104,10 @@ public sealed class ReservationsFixture : IAsyncLifetime
     /// CONVENTIONS.md "Testing": isolate by dropping the database between tests, never by
     /// restarting a container. Re-applies the unique (listId, itemId) index afterwards — dropping
     /// the database drops it too, and a test relying on it running right after a reset would
-    /// otherwise pass for the wrong reason.
+    /// otherwise pass for the wrong reason. Deliberately does NOT re-subscribe to GiftLists'
+    /// events: a Rebus subscription is a durable binding on the broker, not a row this database
+    /// drop touches, so re-subscribing on every reset would just be redundant work against an
+    /// already-live consumer.
     /// </summary>
     public async Task ResetAsync()
     {

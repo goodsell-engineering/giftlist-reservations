@@ -5,8 +5,11 @@ using Reservations.Application.GiftLists.RecordGiftItemRemoved;
 using Reservations.Application.GiftLists.RecordGiftListCreated;
 using Reservations.Application.GiftLists.RecordGiftListDeleted;
 using Reservations.Application.Reservations;
+using Reservations.Application.Reservations.ReserveGift;
 using Reservations.Infrastructure.GiftLists.Messaging;
 using Reservations.Infrastructure.GiftLists.Persistence;
+using Reservations.Infrastructure.Platform.Security;
+using Reservations.Infrastructure.Reservations.Messaging;
 using Reservations.Infrastructure.Reservations.Persistence;
 using GiftLists.Contracts.GiftLists.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,11 +27,12 @@ namespace Reservations.Infrastructure.Platform;
 /// (CONVENTIONS.md "Folder structure") — <c>Platform/</c> holds only this aggregator, which
 /// belongs to no single domain.
 ///
-/// GL-34 adds the read side of "what is reservable": the <c>GiftListProjection</c> built from
+/// GL-34 added the read side of "what is reservable": the <c>GiftListProjection</c> built from
 /// GiftLists' own integration events, and the four Rebus handlers/interactors/validators that
-/// keep it up to date. GL-35's own aggregate/repository/index are unchanged. No
-/// <c>ReserveGift</c> use case exists yet (GL-36) — nothing here sends a command or publishes an
-/// integration event of this service's own.
+/// keep it up to date. GL-35 added this service's own aggregate/repository/index. GL-36 adds the
+/// use case that actually mutates that aggregate — <c>ReserveGift</c>, reached over the same
+/// request/reply bridge Identity's Login/SignUp use (ARCHITECTURE.md "Command → event flow") —
+/// plus the publisher that turns its <c>GiftReserved</c> domain event into <c>GiftReservedV1</c>.
 /// </summary>
 public static class ReservationsInfrastructureServiceCollectionExtensions
 {
@@ -36,6 +40,16 @@ public static class ReservationsInfrastructureServiceCollectionExtensions
     {
         AddReservations(services);
         AddGiftListProjection(services);
+
+        // One open-generic decorator pair, applied once, to every IInteractor<,> registered
+        // above regardless of which domain registered it — Validation, then Logging, in that
+        // order in every service (CONVENTIONS.md "Use cases"). Applied last, here, rather than
+        // once per Add* method: Scrutor's Decorate wraps whatever is already registered at the
+        // point it runs, so this single pair covers both AddReservations' ReserveGift interactor
+        // and AddGiftListProjection's four RecordGiftList*/RecordGiftItem* ones.
+        services.Decorate(typeof(IInteractor<,>), typeof(Validating<,>));
+        services.Decorate(typeof(IInteractor<,>), typeof(Logging<,>));
+
         return services;
     }
 
@@ -81,6 +95,20 @@ public static class ReservationsInfrastructureServiceCollectionExtensions
     private static void AddReservations(IServiceCollection services)
     {
         services.AddScoped<IReservationRepository, ReservationRepository>();
+
+        // GL-36: the collaborators ReserveGiftInteractor needs beyond the two repositories
+        // already registered elsewhere (IReservationRepository above, IGiftListProjectionRepository
+        // in AddGiftListProjection) — genuinely domain-agnostic ports, so their real
+        // implementations live in Platform/, not under Reservations/ (CONVENTIONS.md "Folder
+        // structure").
+        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IReleaseSecretGenerator, ReleaseSecretGenerator>();
+        services.AddScoped<IDomainEventPublisher, ReservationEventPublisher>();
+
+        services.AddScoped<IValidator<ReserveGiftRequest>, ReserveGiftValidator>();
+        services.AddScoped<IInteractor<ReserveGiftRequest, ReserveGiftResponse>, ReserveGiftInteractor>();
+
+        services.AddRebusHandler<ReserveGiftHandler>();
     }
 
     private static void AddGiftListProjection(IServiceCollection services)
@@ -98,11 +126,6 @@ public static class ReservationsInfrastructureServiceCollectionExtensions
 
         services.AddScoped<IValidator<RecordGiftItemRemovedRequest>, RecordGiftItemRemovedValidator>();
         services.AddScoped<IInteractor<RecordGiftItemRemovedRequest, RecordGiftItemRemovedResponse>, RecordGiftItemRemovedInteractor>();
-
-        // One open-generic decorator pair, applied to every IInteractor<,> registered above —
-        // Validation, then Logging, in that order in every service (CONVENTIONS.md "Use cases").
-        services.Decorate(typeof(IInteractor<,>), typeof(Validating<,>));
-        services.Decorate(typeof(IInteractor<,>), typeof(Logging<,>));
 
         services.AddRebusHandler<GiftListCreatedV1Handler>();
         services.AddRebusHandler<GiftListDeletedV1Handler>();

@@ -16,9 +16,11 @@ builder.Services.AddBuildingBlocksHealthChecks(builder.Configuration);
 
 // GL-35: the Reservation aggregate's persistence shape and the unique (listId, itemId) index
 // behind "first reserver wins". GL-34: the gift-list projection built from GiftLists' own
-// integration events, and the Rebus handlers that keep it current — everything below this line
-// is Reservations' own composition root, in Reservations.Infrastructure. No ReserveGift use case
-// exists yet (GL-36), so there is nothing else for Host to wire in front of it.
+// integration events, and the Rebus handlers that keep it current. GL-36: the ReserveGift use
+// case itself, reached over the same request/reply bridge Login/SignUp use (ARCHITECTURE.md
+// "Command → event flow"), and the publisher that turns its GiftReserved domain event into
+// GiftReservedV1 — everything below this line is Reservations' own composition root, in
+// Reservations.Infrastructure.
 builder.Services.AddReservationsInfrastructure();
 
 var app = builder.Build();

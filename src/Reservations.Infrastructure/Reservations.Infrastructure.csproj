@@ -19,12 +19,19 @@
   <ItemGroup>
     <ProjectReference Include="..\Reservations.Application\Reservations.Application.csproj" />
     <ProjectReference Include="..\Reservations.Domain\Reservations.Domain.csproj" />
+    <!-- GL-36: Reservation's own wire surface (ReserveGift/ReserveGiftReply, GiftReservedV1) — a
+         ProjectReference, not a PackageReference, because this is the SAME repo's own Contracts
+         project (mirrors GiftLists.Infrastructure -> GiftLists.Contracts). Only Infrastructure
+         sees it (CONVENTIONS.md "Project reference graph"); Application/Domain never do. -->
+    <ProjectReference Include="..\Reservations.Contracts\Reservations.Contracts.csproj" />
     <!-- CONVENTIONS.md "Project reference graph": Infrastructure may reference BuildingBlocks
          directly too — needed here for BuildingBlocks.Results.Result<T>, which the repository
-         pattern-matches on when translating a Mongo write outcome, and for
+         pattern-matches on when translating a Mongo write outcome, for
          BuildingBlocks.Persistence.BoundedCasRetry/BoundedCasRetryPolicy, which
          GiftListProjectionRepository's compare-and-set retry loop reuses (GL-79 moved both into
-         BuildingBlocks.Persistence specifically so this projection could reuse them). -->
+         BuildingBlocks.Persistence specifically so this projection could reuse them), and for
+         BuildingBlocks.Messaging.RequestReply.ReplyFault, which ReserveGiftHandler (GL-36) uses
+         to turn a failed Result into the wire reply the request/reply bridge expects. -->
     <PackageReference Include="BuildingBlocks" Version="[0.1.0]" />
     <!-- GL-34: this projection is built from GiftLists' own integration events — CONVENTIONS.md
          "Project reference graph" permits Infrastructure to reference another service's
