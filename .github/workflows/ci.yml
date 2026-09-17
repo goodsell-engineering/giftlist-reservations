@@ -10,10 +10,12 @@ on:
 # BuildingBlocks.Infrastructure and BuildingBlocks.Testing from ../local-feed (nuget.config,
 # GL-26), which does not exist on a fresh runner, so this job builds giftlist-buildingblocks from
 # source into a job-local feed. BuildingBlocks.Testing joined the list with GL-35, when
-# Reservations.IntegrationTests gained its first Testcontainers fixture; until then this repo
-# packed only the two its Host needed, and the first PR to add the reference went red in CI
-# because nothing here packed the package it asked for. Keep this list in step with the
-# PackageReferences across the whole solution, not just src/.
+# Reservations.IntegrationTests gained its first Testcontainers fixture; GiftLists.Contracts
+# joined with GL-34, when Reservations.Infrastructure first consumed GiftLists' integration
+# events (its own sibling checkout, mirroring giftlist-gateway's workflow) — until then this repo
+# packed only the packages its Host needed, and the first PR to add a reference not on this list
+# went red in CI because nothing here packed the package it asked for. Keep this list in step
+# with the PackageReferences across the whole solution, not just src/.
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -29,11 +31,17 @@ jobs:
           repository: goodsell-engineering/giftlist-buildingblocks
           path: giftlist-buildingblocks
 
+      - name: Checkout giftlist-giftlists (sibling, for GiftLists.Contracts)
+        uses: actions/checkout@v4
+        with:
+          repository: goodsell-engineering/giftlist-giftlists
+          path: giftlist-giftlists
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Pack BuildingBlocks/.Infrastructure/.Testing into a job-local feed
+      - name: Pack dependency packages into a job-local feed
         run: |
           set -euo pipefail
           FEED="$GITHUB_WORKSPACE/local-feed"
@@ -42,7 +50,8 @@ jobs:
           for proj in \
             giftlist-buildingblocks/src/BuildingBlocks/BuildingBlocks.csproj \
             giftlist-buildingblocks/src/BuildingBlocks.Infrastructure/BuildingBlocks.Infrastructure.csproj \
-            giftlist-buildingblocks/src/BuildingBlocks.Testing/BuildingBlocks.Testing.csproj; do
+            giftlist-buildingblocks/src/BuildingBlocks.Testing/BuildingBlocks.Testing.csproj \
+            giftlist-giftlists/src/GiftLists.Contracts/GiftLists.Contracts.csproj; do
             id=$(dotnet msbuild "$proj" -getProperty:PackageId -nologo)
             ver=$(dotnet msbuild "$proj" -getProperty:Version -nologo)
             dotnet pack "$proj" -c Release -o "$FEED" --nologo

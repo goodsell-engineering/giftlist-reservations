@@ -15,9 +15,10 @@ builder.Services.AddBuildingBlocksRebus(builder.Configuration, "reservation");
 builder.Services.AddBuildingBlocksHealthChecks(builder.Configuration);
 
 // GL-35: the Reservation aggregate's persistence shape and the unique (listId, itemId) index
-// behind "first reserver wins" — everything below this line is Reservations' own composition
-// root, in Reservations.Infrastructure. No interactor and no Rebus handler exist yet (GL-36 owns
-// the ReserveGift use case), so there is nothing else for Host to wire in front of it.
+// behind "first reserver wins". GL-34: the gift-list projection built from GiftLists' own
+// integration events, and the Rebus handlers that keep it current — everything below this line
+// is Reservations' own composition root, in Reservations.Infrastructure. No ReserveGift use case
+// exists yet (GL-36), so there is nothing else for Host to wire in front of it.
 builder.Services.AddReservationsInfrastructure();
 
 var app = builder.Build();
@@ -26,6 +27,11 @@ var app = builder.Build();
 // requirement, not an optimisation — applied once at startup rather than left to be inferred
 // from application code.
 await ReservationsInfrastructureServiceCollectionExtensions.EnsureIndexesAsync(app.Services, CancellationToken.None);
+
+// GL-34: the subscriptions that let GiftLists' integration events actually reach this process —
+// a correctness requirement, applied once at startup rather than left implicit (mirrors
+// Gateway.Host's own SubscribeToGiftListsEventsAsync call).
+await ReservationsInfrastructureServiceCollectionExtensions.SubscribeToGiftListsEventsAsync(app.Services, CancellationToken.None);
 
 // Liveness: only "is the process up and answering HTTP". Deliberately checks nothing
 // external — a RabbitMQ/Mongo blip must not make Docker kill an otherwise-healthy container
