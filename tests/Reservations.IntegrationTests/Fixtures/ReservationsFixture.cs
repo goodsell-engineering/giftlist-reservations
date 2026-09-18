@@ -3,6 +3,7 @@ using BuildingBlocks.Messaging.RequestReply;
 using BuildingBlocks.Persistence;
 using Reservations.Contracts.Reservations;
 using Reservations.Infrastructure.Platform;
+using Reservations.IntegrationTests.Support;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -39,6 +40,13 @@ public sealed class ReservationsFixture : IAsyncLifetime
 
     public IMongoDatabase Database { get; private set; } = null!;
 
+    /// <summary>
+    /// Log entries written by the real Reservations host — see <see cref="LogCapture"/>. GL-37:
+    /// the backstop behind "the <c>Logging&lt;,&gt;</c> decorator never logs a release secret",
+    /// since nothing about the type system prevents SOME future log call from doing it.
+    /// </summary>
+    public LogCapture Logs { get; } = new();
+
     public IRequestReplyBridge RequestReplyBridge => _requesterHost.Services.GetRequiredService<IRequestReplyBridge>();
 
     /// <summary>
@@ -63,6 +71,9 @@ public sealed class ReservationsFixture : IAsyncLifetime
         };
         var reservationsBuilder = Host.CreateApplicationBuilder();
         reservationsBuilder.Logging.ClearProviders();
+        // Kept after ClearProviders so this is the only provider (mirrors GiftLists'/Identity's
+        // own fixtures) — test output stays quiet while GL-37's log-capture assertions still work.
+        reservationsBuilder.Logging.AddProvider(Logs);
         reservationsBuilder.Configuration.AddInMemoryCollection(reservationsConfig);
         reservationsBuilder.Services.AddBuildingBlocksMongo(reservationsBuilder.Configuration, DatabaseName);
         reservationsBuilder.Services.AddBuildingBlocksRebus(reservationsBuilder.Configuration, ReservationQueueName);

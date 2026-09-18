@@ -121,6 +121,29 @@ public sealed class ReserveGiftTests(ReservationsFixture fixture) : IAsyncLifeti
         Assert.Equal("reservation.giftlist_expired", result.Error.Code);
     }
 
+    /// <summary>
+    /// GL-37: proves <c>Validating&lt;,&gt;</c> (CONVENTIONS.md "Use cases") actually wraps
+    /// <c>ReserveGift</c>'s interactor over the real wire — the request/reply bridge, the Rebus
+    /// handler, the composition root's decorator pipeline, all real — not merely that
+    /// <c>ReserveGiftValidator</c> rejects <see cref="Guid.Empty"/> in isolation
+    /// (<c>ReserveGiftInteractorTests</c>/a hand-written validator unit test could both stay green
+    /// with the decorator never registered at all).
+    /// </summary>
+    [Fact]
+    public async Task ReserveGift_ShouldReturnInvalidId_WhenTheListIdIsEmpty()
+    {
+        // Arrange — none; Guid.Empty is invalid regardless of whether the item id or anything
+        // else about the request is otherwise well-formed.
+
+        // Act
+        var result = await fixture.RequestReplyBridge.SendAndAwaitReply<ReserveGiftReply>(
+            new ReserveGift(Guid.Empty, Guid.NewGuid()));
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal("reservation.invalid_id", result.Error.Code);
+    }
+
     [Fact]
     public async Task ReserveGift_ShouldReturnGiftItemNotFound_WhenTheItemIsUnknown()
     {

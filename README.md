@@ -3,22 +3,30 @@
 Reservation service: anonymous gift reservation, isolated by design. Owns the `reservation`
 database and the `reservation` Rebus queue (both singular — CONVENTIONS.md "Persistence").
 
-**This service is a Phase 0 skeleton.** `Reservations.Host` wires Mongo, Rebus and health checks
-and does nothing else; there is no aggregate and no use case yet. Phase 4 builds it.
+Built so far (GL-34 through GL-37): a `GiftListProjection` (`reservation.giftListProjections`),
+kept up to date by four Rebus handlers consuming GiftLists' own `GiftListCreatedV1`/
+`GiftItemAddedV1`/`GiftItemRemovedV1`/`GiftListDeletedV1` events, so this service can answer "is
+this list/item reservable" without ever calling GiftLists directly (ARCHITECTURE.md "Consuming
+other services' events: anti-corruption layer"); the `Reservation` aggregate and its `ReserveGift`
+use case, reached over the same Rebus request/reply bridge Identity's `Login`/`SignUp` use
+(ARCHITECTURE.md "Command → event flow"), enforcing "first reserver wins" with a unique
+`(listId, itemId)` index (`reservation.reservations`); and `GiftReservedV1`, published after a
+successful reservation. `ReleaseReservation`/`ReservationReleasedV1` — undoing a reservation — are
+not built yet.
 
-## `Reservations.Contracts` — present and empty, on purpose
+## `Reservations.Contracts`
 
-The project exists so Phase 4 adds types rather than types *and* packaging plumbing. It is empty
-because that is the accurate statement of this service's public surface today: with no use case,
-there is no command anyone may send it and no event anyone may subscribe to.
+| Kind | Types |
+|---|---|
+| Commands it accepts | `ReserveGift` |
+| Reply shapes for those commands | `ReserveGiftReply` |
+| Events it publishes | `GiftReservedV1` |
 
-It is left empty rather than pre-populated with guesses. ARCHITECTURE.md "What 'breaking' means
-for a message contract" makes a renamed type or a changed field a **major** version bump, so a
-guessed contract is the expensive kind of wrong; adding the first real type later is a purely
-additive minor.
-
-What Phase 4 puts here, from ARCHITECTURE.md "Event catalogue": `ReserveGift` (request/reply) and
-`ReleaseReservation` as commands, `GiftReservedV1` and `ReservationReleasedV1` as events.
+`ReserveGiftReply` carries the one-time `releaseSecret` a reserving browser needs to undo its own
+reservation later (ARCHITECTURE.md "Data model") — returned here, in the reply, and nowhere else
+(GL-37): never in `GiftReservedV1`, never in a query response, never in a log line. See
+`GiftReservedV1PublishingTests`/`ReleaseSecretPrivacyTests` in `Reservations.IntegrationTests` for
+the tests proving that end to end, against the real broker and the real database.
 
 **Read ARCHITECTURE.md "Reservation privacy" before adding a single field.** Nobody ever sees who
 reserved a gift, and nothing may correlate two reservations to one person. That guarantee is
@@ -70,20 +78,15 @@ any of the seven: they govern all of them, a home inside one is invisible to the
 seven copies is exactly the drift they warn about. Comments here cite them by document and
 heading text, never by section number (CONVENTIONS.md "Citing the rules").
 
-## What does not work yet, and whose job it is
+## Repo tooling
 
-The local folder feed, this repo's `nuget.config` (GL-26) and the compose mounts that make the
-feed visible inside every container (GL-29) have all landed — see the nuget.config's own comments
-for the packageSourceMapping reasoning (dependency confusion against nuget.org's unrelated
-`BuildingBlocks` and `Identity.Contracts` packages) and for why one mount path,
-`- ../local-feed:/local-feed:ro`, now serves every service, .NET or web, with no
-container-specific path or symlink to reconcile. What's still missing:
-
-| Missing | Issue |
-|---|---|
-| Semantic versioning discipline and consumer pinning | GL-27 |
-| `make pack-all` (dependency-ordered, refuses to overwrite a version already in the feed) and `clone-all.sh` | GL-28 |
-| Per-repo CI (build and test only; there is nowhere to publish to) | GL-30 |
+The local folder feed, this repo's `nuget.config` (GL-26), the compose mounts that make the feed
+visible inside every container (GL-29), semantic versioning discipline and consumer pinning
+(GL-27), `make pack-all`/`clone-all.sh` (GL-28) and per-repo CI (GL-30) have all landed — see the
+nuget.config's own comments for the packageSourceMapping reasoning (dependency confusion against
+nuget.org's unrelated `BuildingBlocks` and `Identity.Contracts` packages) and for why one mount
+path, `- ../local-feed:/local-feed:ro`, now serves every service, .NET or web, with no
+container-specific path or symlink to reconcile.
 
 Restore and build normally:
 
