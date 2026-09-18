@@ -8,7 +8,7 @@ namespace ArchitectureTests;
 /// reasoning exactly, pointed at this repo's own projection instead
 /// (<c>GiftListProjectionRepository</c> here builds <c>reservation.giftListProjections</c> from
 /// GiftLists' integration events, GL-34 — a second projection in the system, not the Gateway's
-/// only one; GL-115 is the fold that corrected that old claim wherever a PR was already touching
+/// only one; GL-115 tracks correcting that old claim wherever a PR was already touching
 /// the file it sat on).
 ///
 /// <para><b>Why this exists.</b> <c>ProjectionWriteRuleTests</c> is two tests, and neither one

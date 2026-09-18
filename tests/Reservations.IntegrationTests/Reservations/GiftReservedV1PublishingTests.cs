@@ -1,5 +1,3 @@
-using BuildingBlocks.Messaging;
-using BuildingBlocks.Testing;
 using GiftLists.Contracts.GiftLists.Events;
 using Reservations.Application.GiftLists;
 using Reservations.Contracts.Reservations;
@@ -7,12 +5,7 @@ using Reservations.Contracts.Reservations.Events;
 using Reservations.Domain.Reservations;
 using Reservations.IntegrationTests.Fixtures;
 using Reservations.IntegrationTests.Support;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Rebus.Bus;
-using Rebus.Config;
 
 namespace Reservations.IntegrationTests.Reservations;
 
@@ -26,7 +19,11 @@ namespace Reservations.IntegrationTests.Reservations;
 /// <see cref="GiftReservedV1Tests"/> (Reservations.UnitTests) already pins this event's SHAPE —
 /// exactly three fields, never a reservation id or a release secret — by reflection alone; this
 /// suite is only responsible for proving the real publish/subscribe path still works, not for
-/// re-deriving that shape guarantee against a slower, flakier real broker.
+/// re-deriving that shape guarantee against a slower, flakier real broker. GL-37 adds one more
+/// thing this suite alone can prove — that the ACTUAL, wire-deserialized event a real subscriber
+/// receives for a real reservation still carries nothing that could unmask it — since the unit
+/// test can only pin the static shape of the type, never a value drawn from a live reservation's
+/// own minted <see cref="ReserveGiftReply.ReleaseSecret"/>.
 /// </summary>
 [Collection(ReservationsCollection.Name)]
 public sealed class GiftReservedV1PublishingTests(ReservationsFixture fixture) : IAsyncLifetime
@@ -41,37 +38,40 @@ public sealed class GiftReservedV1PublishingTests(ReservationsFixture fixture) :
         // Arrange — a subscriber wired up exactly the way the Gateway would be: it asks Rebus to
         // subscribe to GiftReservedV1 by .NET type, and only receives anything at all if the
         // publisher's wire type name still matches what the subscription was registered under.
-        var (subscriber, queueName, capture) = await StartSubscriberAsync();
+        await using var subscriber = await EventSubscriber<GiftReservedV1>.StartAsync(fixture.RabbitMqConnectionString);
         var listId = Guid.NewGuid();
         var itemId = Guid.NewGuid();
+        await fixture.GiftListsBus.Publish(new GiftListCreatedV1(
+            listId, Guid.NewGuid(), "Birthday Wishlist", DateTimeOffset.UtcNow.AddDays(7), "ShareTokenPlaceholder", DateTimeOffset.UtcNow));
+        await fixture.GiftListsBus.Publish(new GiftItemAddedV1(listId, itemId, "Lego Set", null, null, DateTimeOffset.UtcNow));
+        await WaitForItemOnProjectionAsync(listId, itemId);
 
-        try
+        // Act
+        var reserved = await fixture.RequestReplyBridge.SendAndAwaitReply<ReserveGiftReply>(new ReserveGift(listId, itemId));
+        Assert.True(reserved.IsSuccess);
+        var (received, typeHeader) = await subscriber.Capture.Completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // Assert
+        Assert.Equal(listId, received.ListId);
+        Assert.Equal(itemId, received.ItemId);
+        Assert.NotNull(typeHeader);
+        Assert.Contains(nameof(GiftReservedV1), typeHeader, StringComparison.Ordinal);
+
+        // GL-37: "no reserver identity" proven two ways against the actual instance a real
+        // subscriber received, not the type's static shape (GiftReservedV1Tests already covers
+        // that) — first, that its public properties are exactly the three known ones (a future
+        // field under any name at all would fail this, whatever it was called); second, reflecting
+        // over those properties' VALUES to confirm none of them equals or contains this specific
+        // reservation's own release secret, so the check does not depend on ever naming the field
+        // "ReleaseSecret" to begin with.
+        var propertyNames = typeof(GiftReservedV1).GetProperties().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(new HashSet<string>(StringComparer.Ordinal) { "ListId", "ItemId", "ReservedAt" }, propertyNames);
+
+        var secret = reserved.Value.ReleaseSecret;
+        foreach (var property in typeof(GiftReservedV1).GetProperties())
         {
-            await fixture.GiftListsBus.Publish(new GiftListCreatedV1(
-                listId, Guid.NewGuid(), "Birthday Wishlist", DateTimeOffset.UtcNow.AddDays(7), "ShareTokenPlaceholder", DateTimeOffset.UtcNow));
-            await fixture.GiftListsBus.Publish(new GiftItemAddedV1(listId, itemId, "Lego Set", null, null, DateTimeOffset.UtcNow));
-            await WaitForItemOnProjectionAsync(listId, itemId);
-
-            // Act
-            var reserved = await fixture.RequestReplyBridge.SendAndAwaitReply<ReserveGiftReply>(new ReserveGift(listId, itemId));
-            Assert.True(reserved.IsSuccess);
-            var (received, typeHeader) = await capture.Completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
-
-            // Assert
-            Assert.Equal(listId, received.ListId);
-            Assert.Equal(itemId, received.ItemId);
-            Assert.NotNull(typeHeader);
-            Assert.Contains(nameof(GiftReservedV1), typeHeader, StringComparison.Ordinal);
-        }
-        finally
-        {
-            // GL-57 review: on a .WithReuse(true) container, a queue and its topic binding left
-            // behind here would accumulate across every local run and keep routing future
-            // GiftReservedV1 events into a queue nobody drains.
-            await subscriber.Services.GetRequiredService<IBus>().Unsubscribe<GiftReservedV1>();
-            await subscriber.StopAsync();
-            subscriber.Dispose();
-            await QueueCleanup.DeleteAsync(fixture.RabbitMqConnectionString, queueName);
+            var value = property.GetValue(received)?.ToString() ?? string.Empty;
+            Assert.DoesNotContain(secret, value, StringComparison.Ordinal);
         }
     }
 
@@ -89,24 +89,5 @@ public sealed class GiftReservedV1PublishingTests(ReservationsFixture fixture) :
             () => repository.FindByIdAsync(new GiftListId(listId), CancellationToken.None),
             projection => projection?.ItemIds.Contains(new GiftItemId(itemId)) == true,
             TimeSpan.FromSeconds(15));
-    }
-
-    private async Task<(IHost Host, string QueueName, EventCapture<GiftReservedV1> Capture)> StartSubscriberAsync()
-    {
-        var capture = new EventCapture<GiftReservedV1>();
-        var queueName = $"reservation-tests-sub.{Guid.NewGuid():N}";
-        var builder = Host.CreateApplicationBuilder();
-        builder.Logging.ClearProviders();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            [RebusConfigurationExtensions.ConnectionStringConfigKey] = fixture.RabbitMqConnectionString,
-        });
-        builder.Services.AddSingleton(capture);
-        builder.Services.AddBuildingBlocksRebus(builder.Configuration, queueName);
-        builder.Services.AddRebusHandler<EventCapturingHandler<GiftReservedV1>>();
-        var host = builder.Build();
-        await host.StartAsync();
-        await host.Services.GetRequiredService<IBus>().Subscribe<GiftReservedV1>();
-        return (host, queueName, capture);
     }
 }
