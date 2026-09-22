@@ -27,8 +27,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Reservations.Host\Reservations.Host.csproj" />
     <!-- GL-93: ReliableReadiness's WithReliableWaitStrategy/StartReliablyAsync, required of every
-         Testcontainers builder this suite starts (SuiteLabelRuleTests). -->
-    <PackageReference Include="BuildingBlocks.Testing" Version="[0.1.0]" />
+         Testcontainers builder this suite starts (SuiteLabelRuleTests). GL-43: repinned to 0.2.0
+         — the per-repo CI workflow packs BuildingBlocks.Testing from the buildingblocks main
+         checkout, which has been at 0.2.0 since Batch 40 (GL-37's LogCapture), so this pin was
+         latent-red at restore against local-feed the whole time this project's own copy of
+         LogCapture kept it from being noticed locally. -->
+    <PackageReference Include="BuildingBlocks.Testing" Version="[0.2.0]" />
   </ItemGroup>
 </Project>
 
