@@ -37,7 +37,7 @@
          "Project reference graph" permits Infrastructure to reference another service's
          *.Contracts (ARCHITECTURE.md "Consuming other services' events: anti-corruption layer" —
          these types stop at this boundary; Application/Domain never see them). -->
-    <PackageReference Include="GiftLists.Contracts" Version="[0.1.0]" />
+    <PackageReference Include="GiftLists.Contracts" Version="[0.2.0]" />
   </ItemGroup>
 </Project>
 
