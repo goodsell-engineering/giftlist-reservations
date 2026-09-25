@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Driver;
 using Reservations.Application.Reservations;
 using Reservations.Domain.Reservations;
 using Reservations.IntegrationTests.Fixtures;
@@ -19,6 +21,14 @@ namespace Reservations.IntegrationTests.Reservations;
 [Collection(ReservationsCollection.Name)]
 public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IAsyncLifetime
 {
+    /// <summary>
+    /// The literal collection name, restated here rather than reached for on the internal
+    /// <c>ReservationRepository</c> (CONVENTIONS.md "Reaching an internal from a test": neither
+    /// extractable nor genuinely public), kept in sync by hand — the same choice
+    /// <c>ReleaseSecretPrivacyTests</c> makes for this exact collection.
+    /// </summary>
+    private const string ReservationsCollectionName = "reservations";
+
     public Task InitializeAsync() => fixture.ResetAsync();
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -51,6 +61,63 @@ public sealed class ReservationRepositoryTests(ReservationsFixture fixture) : IA
         Assert.NotNull(reloadedFirst);
         var reloadedSecond = await repository.FindByIdAsync(second.Id, CancellationToken.None);
         Assert.Null(reloadedSecond);
+    }
+
+    /// <summary>
+    /// The Phase 5 gate's "concurrent-reserve load test shows no double reservation" criterion.
+    /// Everything else in this file races two inserts <em>sequentially</em> — await the first,
+    /// then send the second — which proves the index rejects a duplicate but never puts two
+    /// inserts in flight at once. That is the one arrangement where a pre-check cannot help and
+    /// only the unique index can arbitrate, and it is the arrangement the guarantee is actually
+    /// about, so it is worth stating separately.
+    /// </summary>
+    /// <remarks>
+    /// Falsifiable by construction: drop the unique (listId, itemId) index and this test fails on
+    /// the success count, not on a timeout or a flake — verified by doing exactly that (all 16
+    /// inserts succeed and the collection ends up holding 16 documents). The document count is
+    /// asserted as well as the result tally because they can disagree: a repository that swallowed
+    /// the duplicate-key error and reported failure while still writing would satisfy the tally
+    /// alone.
+    /// </remarks>
+    [Fact]
+    public async Task AddAsync_ShouldPersistExactlyOneReservation_WhenManyInsertsRaceForTheSameItem()
+    {
+        // Arrange — one item, many would-be reservers, all started before any of them finishes.
+        const int Racers = 16;
+        var now = DateTimeOffset.UtcNow;
+        var listId = new GiftListId(Guid.NewGuid());
+        var itemId = new GiftItemId(Guid.NewGuid());
+
+        using var scope = fixture.CreateReservationsScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IReservationRepository>();
+
+        // A gate every racer waits on, so the inserts are genuinely simultaneous rather than
+        // merely started in a loop — without it the first insert typically completes before the
+        // last is even issued, and the test silently degrades to the sequential case above.
+        using var start = new SemaphoreSlim(0, Racers);
+        var attempts = Enumerable.Range(0, Racers).Select(async _ =>
+        {
+            await start.WaitAsync();
+            var reservation = Reservation.Create(
+                ReservationId.New(), listId, itemId, new ReleaseSecret(ReleaseSecrets.New()), now);
+            return await repository.AddAsync(reservation, CancellationToken.None);
+        }).ToArray();
+
+        // Act
+        start.Release(Racers);
+        var results = await Task.WhenAll(attempts);
+
+        // Assert — exactly one winner, and every loser told the same thing.
+        Assert.Equal(1, results.Count(result => result.IsSuccess));
+        Assert.All(
+            results.Where(result => result.IsFailure),
+            result => Assert.Equal("reservation.already_reserved", result.Error.Code));
+
+        // ...and the collection agrees with the tally.
+        var stored = await fixture.Database
+            .GetCollection<BsonDocument>(ReservationsCollectionName)
+            .CountDocumentsAsync(Builders<BsonDocument>.Filter.Eq("itemId", itemId.Value));
+        Assert.Equal(1, stored);
     }
 
     [Fact]
