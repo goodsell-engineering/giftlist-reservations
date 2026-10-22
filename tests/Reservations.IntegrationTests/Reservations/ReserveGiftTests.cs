@@ -159,6 +159,31 @@ public sealed class ReserveGiftTests(ReservationsFixture fixture) : IAsyncLifeti
         Assert.Equal("reservation.giftitem_not_found", result.Error.Code);
     }
 
+    /// <summary>
+    /// GL-146 regression: GiftLists.Contracts 0.4.0 appended <c>int? Priority</c> to
+    /// <c>GiftItemAddedV1</c>. Reservations ignores it, so an event that carries one must still
+    /// deserialize, project a reservable item and be reservable. Compiles only against 0.4.0
+    /// (named <c>Priority:</c> argument).
+    /// </summary>
+    [Fact]
+    public async Task ReserveGift_ShouldSucceed_WhenTheItemWasAddedWithAPriority()
+    {
+        // Arrange
+        var listId = Guid.NewGuid();
+        var itemId = Guid.NewGuid();
+        await fixture.GiftListsBus.Publish(new GiftListCreatedV1(
+            listId, Guid.NewGuid(), "Birthday Wishlist", DateTimeOffset.UtcNow.AddDays(7), ShareTokenPlaceholder, DateTimeOffset.UtcNow));
+        await fixture.GiftListsBus.Publish(new GiftItemAddedV1(
+            listId, itemId, "Lego Set", null, null, DateTimeOffset.UtcNow, Priority: 5));
+        await WaitForProjectionAsync(listId, projection => projection?.ItemIds.Contains(new GiftItemId(itemId)) == true);
+
+        // Act
+        var result = await fixture.RequestReplyBridge.SendAndAwaitReply<ReserveGiftReply>(new ReserveGift(listId, itemId));
+
+        // Assert
+        Assert.True(result.IsSuccess);
+    }
+
     /// <summary>Publishes a real, not-expired <c>GiftListCreatedV1</c> plus one <c>GiftItemAddedV1</c>, and waits for this service's own projection to reflect both.</summary>
     private async Task<(Guid ListId, Guid ItemId)> CreateReservableListAsync()
     {
